@@ -1,5 +1,6 @@
 from wtforms import (
     BooleanField,
+    StringField,
     validators,
     FloatField
 )
@@ -8,7 +9,7 @@ from wtforms.fields.form import FormField
 from wtforms.form import Form
 from flask_babel import lazy_gettext as _l
 
-from changedetectionio.forms import processor_text_json_diff_form
+from changedetectionio.forms import processor_text_json_diff_form, StringListField
 
 
 class RestockSettingsForm(Form):
@@ -29,6 +30,12 @@ class RestockSettingsForm(Form):
     ], render_kw={"placeholder": "0%", "size": "5"})
 
     follow_price_changes = BooleanField(_l('Follow price changes'), default=True)
+    price_selector = StringField(_l('Price selector'), [validators.Optional()],
+                                 render_kw={"placeholder": _l(".price, [itemprop='price']")})
+    availability_selector = StringField(_l('Availability selector'), [validators.Optional()],
+                                        render_kw={"placeholder": _l(".inventory, .stock, [itemprop='availability']")})
+    in_stock_texts = StringListField(_l('Extra in-stock phrases'))
+    out_of_stock_texts = StringListField(_l('Extra out-of-stock phrases'))
 
 class processor_settings_form(processor_text_json_diff_form):
     processor_config_restock_diff = FormField(RestockSettingsForm)
@@ -75,6 +82,22 @@ class processor_settings_form(processor_text_json_diff_form):
                     {{ render_field(form.processor_config_restock_diff.price_change_threshold_percent) }}
                     <span class="pure-form-message-inline">Price must change more than this % to trigger a change since the first check.</span><br>
                     <span class="pure-form-message-inline">For example, If the product is $1,000 USD originally, <strong>2%</strong> would mean it has to change more than $20 since the first check.</span><br>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.price_selector) }}
+                    <span class="pure-form-message-inline">Optional CSS or XPath selector for the price element on this page.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.availability_selector) }}
+                    <span class="pure-form-message-inline">Optional CSS or XPath selector for the stock/availability element on this page.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.in_stock_texts, rows=4, placeholder="in stock&#10;available for pickup") }}
+                    <span class="pure-form-message-inline">Optional extra phrases that should count as in stock when found in the availability text.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.out_of_stock_texts, rows=4, placeholder="sold out&#10;backorder") }}
+                    <span class="pure-form-message-inline">Optional extra phrases that should count as out of stock when found in the availability text.</span>
                 </fieldset>
             </div>
         </fieldset>

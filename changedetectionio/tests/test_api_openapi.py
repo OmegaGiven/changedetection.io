@@ -37,6 +37,10 @@ def test_openapi_merged_spec_contains_restock_fields():
         'price_change_min',
         'price_change_max',
         'price_change_threshold_percent',
+        'price_selector',
+        'availability_selector',
+        'in_stock_texts',
+        'out_of_stock_texts',
     }
     missing = expected_fields - set(props.keys())
     assert not missing, f"Missing fields in processor_config_restock_diff schema: {missing}"

@@ -28,6 +28,22 @@ components:
           minimum: 0
           maximum: 100
           description: Minimum price change percentage since the original price to trigger a notification
+        price_selector:
+          type: [string, 'null']
+          description: Optional CSS or XPath selector used to extract the price from the page
+        availability_selector:
+          type: [string, 'null']
+          description: Optional CSS or XPath selector used to extract availability text from the page
+        in_stock_texts:
+          type: array
+          items:
+            type: string
+          description: Extra phrases that should count as in stock when found in availability text
+        out_of_stock_texts:
+          type: array
+          items:
+            type: string
+          description: Extra phrases that should count as out of stock when found in availability text
 
 paths:
   /watch:

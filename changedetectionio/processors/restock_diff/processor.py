@@ -57,6 +57,85 @@ def _deduplicate_prices(data):
     return list(unique_data)
 
 
+def _selector_extract_text(html_content, selector):
+    if not selector:
+        return None
+
+    selector = selector.strip()
+    if not selector:
+        return None
+
+    try:
+        if selector.startswith('xpath1:'):
+            from changedetectionio import html_tools
+            text = html_tools.xpath1_filter(selector.replace('xpath1:', '', 1), html_content, append_pretty_line_formatting=False)
+            return text.strip() if text and text.strip() else None
+
+        if selector.startswith('xpath:') or selector.startswith('/'):
+            from changedetectionio import html_tools
+            text = html_tools.xpath_filter(selector.replace('xpath:', '', 1), html_content, append_pretty_line_formatting=False)
+            return text.strip() if text and text.strip() else None
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        element = soup.select_one(selector)
+        if element:
+            text = element.get_text(" ", strip=True)
+            return text if text else None
+    except Exception as e:
+        logger.warning(f"Restock selector extraction failed for selector '{selector}': {e}")
+
+    return None
+
+
+def _availability_to_instock_state(availability_text, in_stock_texts=None, out_of_stock_texts=None):
+    if not availability_text:
+        return None
+
+    normalized = availability_text.strip().lower()
+    if not normalized:
+        return None
+
+    custom_out = [t.strip().lower() for t in (out_of_stock_texts or []) if str(t).strip()]
+    custom_in = [t.strip().lower() for t in (in_stock_texts or []) if str(t).strip()]
+
+    if any(phrase in normalized for phrase in custom_out):
+        return False
+
+    if any(phrase in normalized for phrase in custom_in):
+        return True
+
+    if any(substring in normalized for substring in [
+        'instock',
+        'instoreonly',
+        'limitedavailability',
+        'onlineonly',
+        'presale']
+           ):
+        return True
+
+    return False
+
+
+def _apply_restock_selector_overrides(restock_data, html_content, restock_settings):
+    price_selector = restock_settings.get('price_selector')
+    availability_selector = restock_settings.get('availability_selector')
+    if not price_selector and not availability_selector:
+        return restock_data
+
+    result = Restock(restock_data or {})
+
+    price_text = _selector_extract_text(html_content, price_selector)
+    if price_text:
+        result['price'] = price_text
+
+    availability_text = _selector_extract_text(html_content, availability_selector)
+    if availability_text:
+        result['availability'] = availability_text
+
+    return result
+
+
 # =============================================================================
 # MEMORY MANAGEMENT: Why We Use Multiprocessing (Linux Only)
 # =============================================================================
@@ -481,6 +560,8 @@ class perform_site_check(difference_detection_processor):
             multiple_prices_found = True
             itemprop_availability = {}
 
+        itemprop_availability = _apply_restock_selector_overrides(itemprop_availability, self.fetcher.content, restock_settings)
+
         # If built-in extraction didn't get both price AND availability, try plugin override
         # Only check plugin if this watch is using a fetcher that might provide better data
         has_price = itemprop_availability.get('price') is not None
@@ -536,17 +617,11 @@ class perform_site_check(difference_detection_processor):
             update_obj['restock'] = itemprop_availability
 
             if itemprop_availability.get('availability'):
-                # @todo: Configurable?
-                if any(substring.lower() in itemprop_availability['availability'].lower() for substring in [
-                    'instock',
-                    'instoreonly',
-                    'limitedavailability',
-                    'onlineonly',
-                    'presale']
-                       ):
-                    update_obj['restock']['in_stock'] = True
-                else:
-                    update_obj['restock']['in_stock'] = False
+                update_obj['restock']['in_stock'] = _availability_to_instock_state(
+                    itemprop_availability['availability'],
+                    in_stock_texts=restock_settings.get('in_stock_texts', []),
+                    out_of_stock_texts=restock_settings.get('out_of_stock_texts', []),
+                )
 
         # Main detection method
         fetched_md5 = None
