@@ -57,7 +57,54 @@ def _deduplicate_prices(data):
     return list(unique_data)
 
 
-def _selector_extract_text(html_content, selector):
+def _normalize_selector_list(restock_settings, singular_key, plural_key):
+    values = []
+
+    singular_value = restock_settings.get(singular_key)
+    if singular_value and str(singular_value).strip():
+        values.append(str(singular_value).strip())
+
+    for value in restock_settings.get(plural_key, []) or []:
+        if value and str(value).strip():
+            values.append(str(value).strip())
+
+    deduped = []
+    for value in values:
+        if value not in deduped:
+            deduped.append(value)
+
+    return deduped
+
+
+def _extract_xpath_value(html_content, selector, attribute=None):
+    from lxml import html
+
+    tree = html.fromstring(html_content)
+    xpath_selector = selector
+    if xpath_selector.startswith('xpath1:'):
+        xpath_selector = xpath_selector.replace('xpath1:', '', 1)
+    elif xpath_selector.startswith('xpath:'):
+        xpath_selector = xpath_selector.replace('xpath:', '', 1)
+
+    results = tree.xpath(xpath_selector.strip())
+    if not results:
+        return None
+
+    first = results[0]
+    if attribute and attribute != 'text':
+        if hasattr(first, 'get'):
+            value = first.get(attribute)
+            return value.strip() if isinstance(value, str) and value.strip() else value
+        return None
+
+    if isinstance(first, str):
+        return first.strip() if first.strip() else None
+
+    text = ' '.join(first.itertext()).strip() if hasattr(first, 'itertext') else str(first).strip()
+    return text if text else None
+
+
+def _selector_extract_text(html_content, selector, attribute=None):
     if not selector:
         return None
 
@@ -67,25 +114,46 @@ def _selector_extract_text(html_content, selector):
 
     try:
         if selector.startswith('xpath1:'):
-            from changedetectionio import html_tools
-            text = html_tools.xpath1_filter(selector.replace('xpath1:', '', 1), html_content, append_pretty_line_formatting=False)
-            return text.strip() if text and text.strip() else None
+            return _extract_xpath_value(html_content, selector, attribute=attribute)
 
         if selector.startswith('xpath:') or selector.startswith('/'):
-            from changedetectionio import html_tools
-            text = html_tools.xpath_filter(selector.replace('xpath:', '', 1), html_content, append_pretty_line_formatting=False)
-            return text.strip() if text and text.strip() else None
+            return _extract_xpath_value(html_content, selector, attribute=attribute)
 
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_content, 'html.parser')
         element = soup.select_one(selector)
         if element:
+            if attribute and attribute != 'text':
+                value = element.get(attribute)
+                if isinstance(value, list):
+                    value = " ".join(str(v) for v in value if str(v).strip())
+                return value.strip() if isinstance(value, str) and value.strip() else value
+
             text = element.get_text(" ", strip=True)
             return text if text else None
     except Exception as e:
         logger.warning(f"Restock selector extraction failed for selector '{selector}': {e}")
 
     return None
+
+
+def _extract_first_matching_selector(html_content, selectors, attribute=None):
+    for selector in selectors:
+        value = _selector_extract_text(html_content, selector, attribute=attribute)
+        if value and str(value).strip():
+            return {
+                'selector': selector,
+                'value': value
+            }
+
+    return None
+
+
+def _extract_page_text(html_content):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+    text = soup.get_text(" ", strip=True)
+    return text if text else None
 
 
 def _availability_to_instock_state(availability_text, in_stock_texts=None, out_of_stock_texts=None):
@@ -118,20 +186,54 @@ def _availability_to_instock_state(availability_text, in_stock_texts=None, out_o
 
 
 def _apply_restock_selector_overrides(restock_data, html_content, restock_settings):
-    price_selector = restock_settings.get('price_selector')
-    availability_selector = restock_settings.get('availability_selector')
-    if not price_selector and not availability_selector:
+    price_selectors = _normalize_selector_list(restock_settings, 'price_selector', 'price_selectors')
+    availability_selectors = _normalize_selector_list(restock_settings, 'availability_selector', 'availability_selectors')
+    price_attribute = restock_settings.get('price_attribute')
+    availability_attribute = restock_settings.get('availability_attribute')
+
+    result = Restock(restock_data or {})
+    debug_bits = []
+
+    if price_selectors:
+        price_match = _extract_first_matching_selector(html_content, price_selectors, attribute=price_attribute)
+        if price_match:
+            result['price'] = price_match['value']
+            debug_bits.append(f"price:{price_match['selector']}")
+
+    if availability_selectors:
+        availability_match = _extract_first_matching_selector(html_content, availability_selectors, attribute=availability_attribute)
+        if availability_match:
+            result['availability'] = availability_match['value']
+            debug_bits.append(f"availability:{availability_match['selector']}")
+
+    if debug_bits:
+        result['debug_summary'] = ", ".join(debug_bits)
+
+    return result
+
+
+def _apply_page_text_phrase_fallback(restock_data, html_content, restock_settings):
+    if not restock_settings.get('page_text_custom_phrase_fallback'):
+        return restock_data
+
+    in_stock_texts = restock_settings.get('in_stock_texts', [])
+    out_of_stock_texts = restock_settings.get('out_of_stock_texts', [])
+    if not in_stock_texts and not out_of_stock_texts:
         return restock_data
 
     result = Restock(restock_data or {})
+    if result.get('in_stock') is not None:
+        return result
 
-    price_text = _selector_extract_text(html_content, price_selector)
-    if price_text:
-        result['price'] = price_text
-
-    availability_text = _selector_extract_text(html_content, availability_selector)
-    if availability_text:
-        result['availability'] = availability_text
+    page_text = _extract_page_text(html_content)
+    page_state = _availability_to_instock_state(page_text, in_stock_texts=in_stock_texts, out_of_stock_texts=out_of_stock_texts)
+    if page_state is not None:
+        result['in_stock'] = page_state
+        if not result.get('availability'):
+            result['availability'] = page_text[:250]
+        existing_debug = result.get('debug_summary')
+        suffix = "page-text-custom-phrases"
+        result['debug_summary'] = f"{existing_debug}, {suffix}" if existing_debug else suffix
 
     return result
 
@@ -622,6 +724,8 @@ class perform_site_check(difference_detection_processor):
                     in_stock_texts=restock_settings.get('in_stock_texts', []),
                     out_of_stock_texts=restock_settings.get('out_of_stock_texts', []),
                 )
+
+        update_obj['restock'] = _apply_page_text_phrase_fallback(update_obj['restock'], self.fetcher.content, restock_settings)
 
         # Main detection method
         fetched_md5 = None

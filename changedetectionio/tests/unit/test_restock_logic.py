@@ -22,6 +22,17 @@ class TestDiffBuilder(unittest.TestCase):
         assert restock_diff._selector_extract_text(html, '.big-price') == '$199.99'
         assert restock_diff._selector_extract_text(html, '.inventory') == 'Sold Out'
 
+    def test_restock_selector_extract_attribute(self):
+        html = '<meta class="product-price" content="199.99"><div class="inventory" data-state="sold out">Sold Out</div>'
+        assert restock_diff._selector_extract_text(html, '.product-price', attribute='content') == '199.99'
+        assert restock_diff._selector_extract_text(html, '.inventory', attribute='data-state') == 'sold out'
+
+    def test_restock_multiple_selectors_first_match(self):
+        html = '<div class="fallback-price">$149.99</div>'
+        match = restock_diff._extract_first_matching_selector(html, ['.missing', '.fallback-price'])
+        assert match['selector'] == '.fallback-price'
+        assert match['value'] == '$149.99'
+
     def test_restock_custom_availability_keywords(self):
         assert restock_diff._availability_to_instock_state(
             'SOLD OUT',
@@ -31,6 +42,14 @@ class TestDiffBuilder(unittest.TestCase):
             'Available for pickup today',
             in_stock_texts=['available for pickup']
         ) is True
+
+    def test_page_text_custom_phrase_fallback(self):
+        restock = restock_diff._apply_page_text_phrase_fallback(
+            {},
+            '<html><body><div>Ships tomorrow - sold out online</div></body></html>',
+            {'page_text_custom_phrase_fallback': True, 'out_of_stock_texts': ['sold out online']}
+        )
+        assert restock.get('in_stock') is False
 
 if __name__ == '__main__':
     unittest.main()

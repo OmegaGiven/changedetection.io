@@ -34,6 +34,22 @@ components:
         availability_selector:
           type: [string, 'null']
           description: Optional CSS or XPath selector used to extract availability text from the page
+        price_selectors:
+          type: array
+          items:
+            type: string
+          description: Optional ordered list of CSS or XPath selectors used to extract the price from the page
+        availability_selectors:
+          type: array
+          items:
+            type: string
+          description: Optional ordered list of CSS or XPath selectors used to extract availability text from the page
+        price_attribute:
+          type: [string, 'null']
+          description: Optional attribute name to read from the matched price element instead of visible text
+        availability_attribute:
+          type: [string, 'null']
+          description: Optional attribute name to read from the matched availability element instead of visible text
         in_stock_texts:
           type: array
           items:
@@ -44,6 +60,10 @@ components:
           items:
             type: string
           description: Extra phrases that should count as out of stock when found in availability text
+        page_text_custom_phrase_fallback:
+          type: boolean
+          default: false
+          description: Scan the full page text with custom stock phrases when targeted extraction did not classify availability
 
 paths:
   /watch:

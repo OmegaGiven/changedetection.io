@@ -842,7 +842,8 @@ def test_api_restock_processor_config(client, live_server, measure_memory_usage,
                 "in_stock_processing": "in_stock_only",
                 "follow_price_changes": True,
                 "price_change_min": 8888888.0,
-                "availability_selector": ".inventory",
+                "availability_selectors": [".inventory", ".stock-status"],
+                "availability_attribute": "data-state",
             }
         }),
         headers={'content-type': 'application/json', 'x-api-key': api_key},
@@ -856,7 +857,8 @@ def test_api_restock_processor_config(client, live_server, measure_memory_usage,
     res = client.get(url_for("ui.ui_edit.edit_page", uuid=watch_uuid))
     assert res.status_code == 200
     assert b'8888888' in res.data, "price_change_min set via POST should appear in the UI edit form"
-    assert b'.inventory' in res.data, "availability_selector set via POST should appear in the UI edit form"
+    assert b'.inventory' in res.data, "availability_selectors set via POST should appear in the UI edit form"
+    assert b'data-state' in res.data, "availability_attribute set via POST should appear in the UI edit form"
 
     # Valid processor_config_restock_diff update via PUT should also be accepted
     res = client.put(

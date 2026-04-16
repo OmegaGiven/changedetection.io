@@ -34,8 +34,15 @@ class RestockSettingsForm(Form):
                                  render_kw={"placeholder": _l(".price, [itemprop='price']")})
     availability_selector = StringField(_l('Availability selector'), [validators.Optional()],
                                         render_kw={"placeholder": _l(".inventory, .stock, [itemprop='availability']")})
+    price_selectors = StringListField(_l('Price selectors'))
+    availability_selectors = StringListField(_l('Availability selectors'))
+    price_attribute = StringField(_l('Price attribute'), [validators.Optional()],
+                                  render_kw={"placeholder": _l("text, content, value, data-price")})
+    availability_attribute = StringField(_l('Availability attribute'), [validators.Optional()],
+                                         render_kw={"placeholder": _l("text, content, value, aria-label")})
     in_stock_texts = StringListField(_l('Extra in-stock phrases'))
     out_of_stock_texts = StringListField(_l('Extra out-of-stock phrases'))
+    page_text_custom_phrase_fallback = BooleanField(_l('Fallback to page text for custom stock phrases'), default=False)
 
 class processor_settings_form(processor_text_json_diff_form):
     processor_config_restock_diff = FormField(RestockSettingsForm)
@@ -84,12 +91,20 @@ class processor_settings_form(processor_text_json_diff_form):
                     <span class="pure-form-message-inline">For example, If the product is $1,000 USD originally, <strong>2%</strong> would mean it has to change more than $20 since the first check.</span><br>
                 </fieldset>
                 <fieldset class="pure-group">
-                    {{ render_field(form.processor_config_restock_diff.price_selector) }}
-                    <span class="pure-form-message-inline">Optional CSS or XPath selector for the price element on this page.</span>
+                    {{ render_field(form.processor_config_restock_diff.price_selectors, rows=4, placeholder=".big-price&#10;[itemprop='price']&#10;xpath://*[@data-price]") }}
+                    <span class="pure-form-message-inline">Optional CSS or XPath selectors for price, tried top to bottom until one returns a value.</span>
                 </fieldset>
                 <fieldset class="pure-group">
-                    {{ render_field(form.processor_config_restock_diff.availability_selector) }}
-                    <span class="pure-form-message-inline">Optional CSS or XPath selector for the stock/availability element on this page.</span>
+                    {{ render_field(form.processor_config_restock_diff.price_attribute) }}
+                    <span class="pure-form-message-inline">Optional attribute to read from the matched price element. Leave empty or use <code>text</code> for visible text.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.availability_selectors, rows=4, placeholder=".inventory&#10;.stock-status&#10;xpath://*[@data-stock-status]") }}
+                    <span class="pure-form-message-inline">Optional CSS or XPath selectors for stock/availability, tried top to bottom until one returns a value.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_field(form.processor_config_restock_diff.availability_attribute) }}
+                    <span class="pure-form-message-inline">Optional attribute to read from the matched availability element. Leave empty or use <code>text</code> for visible text.</span>
                 </fieldset>
                 <fieldset class="pure-group">
                     {{ render_field(form.processor_config_restock_diff.in_stock_texts, rows=4, placeholder="in stock&#10;available for pickup") }}
@@ -98,6 +113,10 @@ class processor_settings_form(processor_text_json_diff_form):
                 <fieldset class="pure-group">
                     {{ render_field(form.processor_config_restock_diff.out_of_stock_texts, rows=4, placeholder="sold out&#10;backorder") }}
                     <span class="pure-form-message-inline">Optional extra phrases that should count as out of stock when found in the availability text.</span>
+                </fieldset>
+                <fieldset class="pure-group">
+                    {{ render_checkbox_field(form.processor_config_restock_diff.page_text_custom_phrase_fallback) }}
+                    <span class="pure-form-message-inline">If selectors and metadata are weak, scan the full page text using your custom in-stock/out-of-stock phrases.</span>
                 </fieldset>
             </div>
         </fieldset>
